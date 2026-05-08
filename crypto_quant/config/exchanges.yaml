@@ -1,0 +1,56 @@
+exchanges:
+  binance:
+    name: "Binance"
+    api_key: "${BINANCE_API_KEY}"
+    secret: "${BINANCE_SECRET}"
+    options:
+      defaultType: "spot"
+    rate_limit: 1200
+    sandbox: false
+
+  okx:
+    name: "OKX"
+    api_key: "${OKX_API_KEY}"
+    secret: "${OKX_SECRET}"
+    password: "${OKX_PASSPHRASE}"
+    rate_limit: 1000
+    sandbox: false
+
+  bybit:
+    name: "Bybit"
+    api_key: "${BYBIT_API_KEY}"
+    secret: "${BYBIT_SECRET}"
+    rate_limit: 1000
+    sandbox: false
+
+trading:
+  default_exchange: "binance"
+  default_symbol: "BTC/USDT"
+  timeframe: "1h"
+  order_type: "limit"
+
+risk:
+  max_position_size_pct: 0.1
+  max_total_exposure_pct: 0.5
+  stop_loss_pct: 0.05
+  take_profit_pct: 0.1
+  max_drawdown_pct: 0.2
+  max_daily_loss_pct: 0.03
+  max_open_orders: 10
+
+backtest:
+  initial_capital: 10000
+  commission: 0.001
+  slippage: 0.0005
+
+notification:
+  enabled: false
+  telegram:
+    bot_token: "${TELEGRAM_BOT_TOKEN}"
+    chat_id: "${TELEGRAM_CHAT_ID}"
+  log_file: "logs/trading.log"
+
+data:
+  storage_type: "sqlite"
+  sqlite_path: "data/trading.db"
+  csv_path: "data/csv"
