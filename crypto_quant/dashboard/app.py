@@ -17,6 +17,11 @@ from strategy.rsi import RSIStrategy
 from strategy.grid import GridStrategy
 from backtest.engine import BacktestEngine
 from config.settings import settings
+from exchange.config_manager import (
+    list_exchange_configs, get_exchange_config, save_exchange_config,
+    delete_exchange_config, test_exchange_connection, get_exchange_instance,
+    get_supported_exchanges,
+)
 
 app = Flask(__name__)
 
@@ -383,6 +388,26 @@ tr:hover td { background:rgba(0,212,170,0.04); }
 .controls select, .controls input { background:#1e1e2e; color:#e0e0f0; border:1px solid #3d3d5c; border-radius:6px; padding:6px 12px; font-size:13px; }
 .controls select:focus, .controls input:focus { outline:none; border-color:#00d4aa; }
 .loading { text-align:center; padding:40px; color:#8888aa; }
+.form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; background:#1a1a2e; border-radius:12px; padding:20px; border:1px solid #2a2a4a; }
+.form-group { display:flex; flex-direction:column; gap:6px; }
+.form-group label { font-size:13px; color:#8888aa; font-weight:500; }
+.form-group input, .form-group select { background:#13132a; color:#e0e0f0; border:1px solid #3d3d5c; border-radius:6px; padding:8px 12px; font-size:13px; }
+.form-group input:focus, .form-group select:focus { outline:none; border-color:#00d4aa; }
+.exchange-card { background:linear-gradient(135deg,#1e1e2e,#2d2d44); border-radius:12px; padding:20px; border:1px solid #3d3d5c; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; }
+.exchange-info { flex:1; }
+.exchange-info h3 { font-size:16px; color:#e0e0f0; margin-bottom:8px; }
+.exchange-info p { font-size:13px; color:#8888aa; margin:2px 0; }
+.exchange-actions { display:flex; gap:8px; }
+.btn-sm { padding:6px 14px; font-size:12px; border:none; border-radius:6px; cursor:pointer; }
+.btn-test { background:#4a90d9; color:#fff; }
+.btn-edit { background:#ffa502; color:#0d0d1a; }
+.btn-del { background:#ff4757; color:#fff; }
+.alert { padding:12px 16px; border-radius:8px; margin-bottom:12px; font-size:13px; }
+.alert-success { background:rgba(0,212,170,0.15); border:1px solid #00d4aa; color:#00d4aa; }
+.alert-error { background:rgba(255,71,87,0.15); border:1px solid #ff4757; color:#ff4757; }
+.badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
+.badge-sandbox { background:rgba(255,165,2,0.2); color:#ffa502; }
+.badge-live { background:rgba(0,212,170,0.2); color:#00d4aa; }
 </style>
 </head>
 <body>
@@ -393,6 +418,8 @@ tr:hover td { background:rgba(0,212,170,0.04); }
   <a href="#" onclick="showPage('compare')">💰 交易分析</a>
   <a href="#" onclick="showPage('risk')">⚠️ 风险分析</a>
   <a href="#" onclick="showPage('live')">🔄 实时交易</a>
+  <a href="#" onclick="showPage('exchanges')">⚙️ 交易所配置</a>
+  <a href="#" onclick="showPage('sandbox')">🧪 虚拟盘交易</a>
 </div>
 <div class="main">
   <!-- Overview -->
@@ -493,6 +520,105 @@ tr:hover td { background:rgba(0,212,170,0.04); }
     <h2>⚠️ 风控状态</h2>
     <div class="metrics-row" id="live-risk-metrics"></div>
   </div>
+  <!-- Exchange Config -->
+  <div id="page-exchanges" class="page">
+    <h1>⚙️ 交易所API配置</h1>
+    <div class="controls">
+      <button class="btn btn-primary" onclick="showAddExchange()">➕ 添加交易所</button>
+      <button class="btn btn-primary" onclick="loadExchanges()">🔄 刷新</button>
+    </div>
+    <div id="exchange-list"></div>
+    <div id="exchange-form" style="display:none">
+      <h2 id="exchange-form-title">添加交易所</h2>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>配置名称 (唯一ID)</label>
+          <input id="ex-config-id" type="text" placeholder="my_binance">
+        </div>
+        <div class="form-group">
+          <label>交易所</label>
+          <select id="ex-exchange-id"></select>
+        </div>
+        <div class="form-group">
+          <label>API Key</label>
+          <input id="ex-api-key" type="text" placeholder="输入API Key">
+        </div>
+        <div class="form-group">
+          <label>Secret</label>
+          <input id="ex-secret" type="password" placeholder="输入Secret">
+        </div>
+        <div class="form-group" id="ex-password-group" style="display:none">
+          <label>Passphrase (OKX)</label>
+          <input id="ex-password" type="password" placeholder="输入Passphrase">
+        </div>
+        <div class="form-group">
+          <label>市场类型</label>
+          <select id="ex-market-type"><option value="spot">现货</option><option value="swap">永续合约</option></select>
+        </div>
+        <div class="form-group">
+          <label>沙箱模式 (测试网)</label>
+          <select id="ex-sandbox"><option value="true">✅ 启用 (虚拟盘)</option><option value="false">❌ 禁用 (实盘)</option></select>
+        </div>
+        <div class="form-group">
+          <label>请求频率限制 (ms)</label>
+          <input id="ex-rate-limit" type="number" value="1000">
+        </div>
+      </div>
+      <div class="controls" style="margin-top:16px">
+        <button class="btn btn-primary" onclick="saveExchange()">💾 保存配置</button>
+        <button class="btn" onclick="hideExchangeForm()" style="background:#3d3d5c;color:#e0e0f0">取消</button>
+        <button class="btn" onclick="testConnection()" style="background:#4a90d9;color:#fff">🔌 测试连接</button>
+      </div>
+      <div id="ex-test-result" style="margin-top:12px"></div>
+    </div>
+  </div>
+  <!-- Sandbox Trading -->
+  <div id="page-sandbox" class="page">
+    <h1>🧪 虚拟盘交易 (沙箱/测试网)</h1>
+    <div class="controls">
+      <label>选择交易所配置</label>
+      <select id="sb-config"></select>
+      <button class="btn btn-primary" onclick="loadSandbox()">🔄 加载账户</button>
+    </div>
+    <div id="sandbox-warning" style="display:none;background:rgba(255,165,2,0.1);border:1px solid #ffa502;border-radius:8px;padding:12px;margin-bottom:16px">
+      ⚠️ <strong>沙箱模式</strong>：当前使用交易所测试网，资金为虚拟资金，不会影响真实账户。
+    </div>
+    <div class="metrics-row" id="sb-balance"></div>
+    <h2>📝 下单</h2>
+    <div class="form-grid" style="grid-template-columns:repeat(5,1fr)">
+      <div class="form-group">
+        <label>交易对</label>
+        <input id="sb-symbol" type="text" value="BTC/USDT">
+      </div>
+      <div class="form-group">
+        <label>方向</label>
+        <select id="sb-side"><option value="buy">买入</option><option value="sell">卖出</option></select>
+      </div>
+      <div class="form-group">
+        <label>类型</label>
+        <select id="sb-type"><option value="market">市价</option><option value="limit">限价</option></select>
+      </div>
+      <div class="form-group">
+        <label>数量</label>
+        <input id="sb-amount" type="number" value="0.001" step="0.001">
+      </div>
+      <div class="form-group">
+        <label>价格 (限价)</label>
+        <input id="sb-price" type="number" placeholder="限价单填写">
+      </div>
+    </div>
+    <div class="controls" style="margin-top:12px">
+      <button class="btn btn-primary" onclick="placeOrder()" style="background:#00d4aa">📈 买入</button>
+      <button class="btn" onclick="placeOrder()" style="background:#ff4757;color:#fff" id="btn-sell">📉 卖出</button>
+    </div>
+    <div id="sb-order-result" style="margin-top:12px"></div>
+    <h2>📋 当前挂单</h2>
+    <div id="sb-open-orders"></div>
+    <h2>📊 持仓</h2>
+    <div id="sb-positions"></div>
+    <h2>📜 最近交易</h2>
+    <div id="sb-trade-history"></div>
+  </div>
 </div>
 
 <script>
@@ -504,6 +630,8 @@ function showPage(name) {
   if (name === 'overview') loadOverview();
   if (name === 'compare') loadCompare();
   if (name === 'risk') loadRisk();
+  if (name === 'exchanges') loadExchanges();
+  if (name === 'sandbox') loadSandboxConfigs();
 }
 
 function renderChart(divId, chartJson) {
@@ -646,6 +774,249 @@ function loadLive() {
   });
 }
 
+let _editingConfigId = null;
+
+function showAddExchange() {
+  _editingConfigId = null;
+  document.getElementById('exchange-form-title').textContent = '添加交易所';
+  document.getElementById('ex-config-id').value = '';
+  document.getElementById('ex-config-id').disabled = false;
+  document.getElementById('ex-api-key').value = '';
+  document.getElementById('ex-secret').value = '';
+  document.getElementById('ex-password').value = '';
+  document.getElementById('ex-sandbox').value = 'true';
+  document.getElementById('ex-market-type').value = 'spot';
+  document.getElementById('ex-rate-limit').value = '1000';
+  document.getElementById('ex-test-result').innerHTML = '';
+  document.getElementById('exchange-form').style.display = 'block';
+  loadExchangeOptions();
+}
+
+function hideExchangeForm() {
+  document.getElementById('exchange-form').style.display = 'none';
+  _editingConfigId = null;
+}
+
+function loadExchangeOptions() {
+  fetch('/api/exchanges/supported').then(r=>r.json()).then(d => {
+    let sel = document.getElementById('ex-exchange-id');
+    sel.innerHTML = '';
+    d.forEach(e => {
+      let opt = document.createElement('option');
+      opt.value = e.id;
+      opt.textContent = e.name + (e.has_sandbox ? ' (支持沙箱)' : '');
+      sel.appendChild(opt);
+    });
+    sel.onchange = function() {
+      document.getElementById('ex-password-group').style.display = this.value === 'okx' ? 'flex' : 'none';
+    };
+  });
+}
+
+function loadExchanges() {
+  fetch('/api/exchanges').then(r=>r.json()).then(d => {
+    let html = '';
+    d.forEach(ex => {
+      let badge = ex.sandbox ? '<span class="badge badge-sandbox">沙箱</span>' : '<span class="badge badge-live">实盘</span>';
+      html += '<div class="exchange-card"><div class="exchange-info">' +
+        '<h3>' + ex.name + ' ' + badge + '</h3>' +
+        '<p>交易所: ' + ex.exchange_id + ' | 市场: ' + ex.market_type + '</p>' +
+        '<p>API Key: ' + (ex.has_api_key ? '✅ 已配置' : '❌ 未配置') +
+        ' | Secret: ' + (ex.has_secret ? '✅ 已配置' : '❌ 未配置') + '</p>' +
+        '<p>更新: ' + (ex.updated_at || '-') + '</p>' +
+        '</div><div class="exchange-actions">' +
+        '<button class="btn-sm btn-test" onclick="testConn(\'' + ex.id + '\')">🔌 测试</button>' +
+        '<button class="btn-sm btn-edit" onclick="editExchange(\'' + ex.id + '\')">✏️ 编辑</button>' +
+        '<button class="btn-sm btn-del" onclick="delExchange(\'' + ex.id + '\')">🗑️ 删除</button>' +
+        '</div></div>';
+    });
+    if (!d.length) html = '<p style="color:#8888aa">暂无交易所配置，点击上方按钮添加</p>';
+    document.getElementById('exchange-list').innerHTML = html;
+  });
+}
+
+function saveExchange() {
+  let data = {
+    name: document.getElementById('ex-config-id').value || document.getElementById('ex-exchange-id').value,
+    exchange_id: document.getElementById('ex-exchange-id').value,
+    api_key: document.getElementById('ex-api-key').value,
+    secret: document.getElementById('ex-secret').value,
+    password: document.getElementById('ex-password').value,
+    market_type: document.getElementById('ex-market-type').value,
+    sandbox: document.getElementById('ex-sandbox').value === 'true',
+    rate_limit: +document.getElementById('ex-rate-limit').value,
+  };
+  let configId = _editingConfigId || document.getElementById('ex-config-id').value;
+  if (!configId) { alert('请填写配置名称'); return; }
+  fetch('/api/exchanges/' + encodeURIComponent(configId), {
+    method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+  }).then(r=>r.json()).then(d => {
+    if (d.success) {
+      document.getElementById('ex-test-result').innerHTML = '<div class="alert alert-success">✅ 配置已保存</div>';
+      hideExchangeForm();
+      loadExchanges();
+    } else {
+      document.getElementById('ex-test-result').innerHTML = '<div class="alert alert-error">❌ ' + d.error + '</div>';
+    }
+  });
+}
+
+function editExchange(configId) {
+  fetch('/api/exchanges/' + encodeURIComponent(configId)).then(r=>r.json()).then(d => {
+    _editingConfigId = configId;
+    document.getElementById('exchange-form-title').textContent = '编辑交易所: ' + configId;
+    document.getElementById('ex-config-id').value = configId;
+    document.getElementById('ex-config-id').disabled = true;
+    document.getElementById('ex-api-key').value = d.api_key || '';
+    document.getElementById('ex-secret').value = d.secret || '';
+    document.getElementById('ex-password').value = d.password || '';
+    document.getElementById('ex-market-type').value = d.market_type || 'spot';
+    document.getElementById('ex-sandbox').value = d.sandbox ? 'true' : 'false';
+    document.getElementById('ex-rate-limit').value = d.rate_limit || 1000;
+    document.getElementById('ex-test-result').innerHTML = '';
+    document.getElementById('exchange-form').style.display = 'block';
+    loadExchangeOptions();
+    setTimeout(() => {
+      document.getElementById('ex-exchange-id').value = d.exchange_id || 'binance';
+      document.getElementById('ex-password-group').style.display = d.exchange_id === 'okx' ? 'flex' : 'none';
+    }, 500);
+  });
+}
+
+function delExchange(configId) {
+  if (!confirm('确定删除配置 "' + configId + '"？')) return;
+  fetch('/api/exchanges/' + encodeURIComponent(configId), {method:'DELETE'}).then(r=>r.json()).then(d => {
+    if (d.success) loadExchanges();
+    else alert('删除失败: ' + d.error);
+  });
+}
+
+function testConn(configId) {
+  fetch('/api/exchanges/' + encodeURIComponent(configId) + '/test').then(r=>r.json()).then(d => {
+    if (d.success) alert('✅ ' + d.message);
+    else alert('❌ 连接失败: ' + d.error);
+  });
+}
+
+function testConnection() {
+  let configId = _editingConfigId || document.getElementById('ex-config-id').value;
+  if (!configId) { alert('请先填写配置名称并保存'); return; }
+  document.getElementById('ex-test-result').innerHTML = '<div class="alert" style="color:#ffa502">⏳ 测试连接中...</div>';
+  saveExchange();
+  setTimeout(() => {
+    fetch('/api/exchanges/' + encodeURIComponent(configId) + '/test').then(r=>r.json()).then(d => {
+      if (d.success) {
+        document.getElementById('ex-test-result').innerHTML = '<div class="alert alert-success">✅ ' + d.message + (d.usdt_balance !== undefined ? '<br>USDT余额: ' + d.usdt_balance : '') + '</div>';
+      } else {
+        document.getElementById('ex-test-result').innerHTML = '<div class="alert alert-error">❌ 连接失败: ' + d.error + '</div>';
+      }
+    });
+  }, 500);
+}
+
+function loadSandboxConfigs() {
+  fetch('/api/exchanges').then(r=>r.json()).then(d => {
+    let sel = document.getElementById('sb-config');
+    sel.innerHTML = '';
+    d.forEach(ex => {
+      let opt = document.createElement('option');
+      opt.value = ex.id;
+      opt.textContent = ex.name + ' (' + ex.exchange_id + ')' + (ex.sandbox ? ' [沙箱]' : ' [实盘]');
+      sel.appendChild(opt);
+    });
+  });
+}
+
+function loadSandbox() {
+  let configId = document.getElementById('sb-config').value;
+  if (!configId) { alert('请先选择交易所配置'); return; }
+  fetch('/api/sandbox/balance?config_id=' + encodeURIComponent(configId)).then(r=>r.json()).then(d => {
+    if (d.error) {
+      document.getElementById('sb-balance').innerHTML = '<div class="alert alert-error">❌ ' + d.error + '</div>';
+      return;
+    }
+    document.getElementById('sandbox-warning').style.display = d.sandbox ? 'block' : 'none';
+    let balHtml = '';
+    d.balances.forEach(b => {
+      if (b.total > 0) balHtml += metricCard(b.currency, '可用: ' + b.free.toFixed(4) + ' | 总计: ' + b.total.toFixed(4), 'neutral');
+    });
+    if (!balHtml) balHtml = '<p style="color:#8888aa">无余额</p>';
+    document.getElementById('sb-balance').innerHTML = balHtml;
+    loadSandboxOrders();
+    loadSandboxPositions();
+  });
+}
+
+function placeOrder() {
+  let configId = document.getElementById('sb-config').value;
+  if (!configId) { alert('请先选择交易所配置'); return; }
+  let side = document.getElementById('sb-side').value;
+  let data = {
+    config_id: configId,
+    symbol: document.getElementById('sb-symbol').value,
+    side: side,
+    type: document.getElementById('sb-type').value,
+    amount: +document.getElementById('sb-amount').value,
+    price: +document.getElementById('sb-price').value || undefined,
+  };
+  fetch('/api/sandbox/order', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+  }).then(r=>r.json()).then(d => {
+    if (d.success) {
+      document.getElementById('sb-order-result').innerHTML = '<div class="alert alert-success">✅ 订单已提交: ' + d.order_id + '</div>';
+      setTimeout(() => { loadSandbox(); loadSandboxOrders(); }, 1000);
+    } else {
+      document.getElementById('sb-order-result').innerHTML = '<div class="alert alert-error">❌ ' + d.error + '</div>';
+    }
+  });
+}
+
+function loadSandboxOrders() {
+  let configId = document.getElementById('sb-config').value;
+  if (!configId) return;
+  fetch('/api/sandbox/orders?config_id=' + encodeURIComponent(configId) + '&symbol=' + document.getElementById('sb-symbol').value)
+    .then(r=>r.json()).then(d => {
+      if (d.orders && d.orders.length) {
+        document.getElementById('sb-open-orders').innerHTML = buildTable(d.orders, [
+          {key:'id',label:'订单ID'},{key:'symbol',label:'交易对'},{key:'side',label:'方向'},
+          {key:'type',label:'类型'},{key:'price',label:'价格'},{key:'amount',label:'数量'},
+          {key:'filled',label:'已成交'},{key:'status',label:'状态'}
+        ]) + '<div class="controls" style="margin-top:8px"><button class="btn btn-sm btn-del" onclick="cancelAllOrders()">取消所有挂单</button></div>';
+      } else {
+        document.getElementById('sb-open-orders').innerHTML = '<p style="color:#8888aa">暂无挂单</p>';
+      }
+    });
+}
+
+function cancelAllOrders() {
+  let configId = document.getElementById('sb-config').value;
+  let symbol = document.getElementById('sb-symbol').value;
+  fetch('/api/sandbox/orders/cancel', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({config_id: configId, symbol: symbol})
+  }).then(r=>r.json()).then(d => {
+    if (d.success) { alert('✅ 已取消 ' + d.canceled + ' 个挂单'); loadSandboxOrders(); }
+    else alert('❌ ' + d.error);
+  });
+}
+
+function loadSandboxPositions() {
+  let configId = document.getElementById('sb-config').value;
+  if (!configId) return;
+  fetch('/api/sandbox/positions?config_id=' + encodeURIComponent(configId))
+    .then(r=>r.json()).then(d => {
+      if (d.positions && d.positions.length) {
+        document.getElementById('sb-positions').innerHTML = buildTable(d.positions, [
+          {key:'symbol',label:'交易对'},{key:'side',label:'方向'},{key:'size',label:'数量'},
+          {key:'entry_price',label:'入场价'},{key:'mark_price',label:'标记价'},
+          {key:'unrealized_pnl',label:'未实现盈亏',color:'pnl'},{key:'leverage',label:'杠杆'}
+        ]);
+      } else {
+        document.getElementById('sb-positions').innerHTML = '<p style="color:#8888aa">暂无持仓（现货模式无持仓概念）</p>';
+      }
+    });
+}
+
 loadOverview();
 </script>
 </body>
@@ -723,6 +1094,188 @@ def api_live():
             "max_daily_loss_pct": f"{risk_config.get('max_daily_loss_pct', 0):.1%}",
         },
     })
+
+
+@app.route("/api/exchanges", methods=["GET"])
+def api_list_exchanges():
+    return jsonify(list_exchange_configs())
+
+
+@app.route("/api/exchanges/supported", methods=["GET"])
+def api_supported_exchanges():
+    return jsonify(get_supported_exchanges())
+
+
+@app.route("/api/exchanges/<config_id>", methods=["GET"])
+def api_get_exchange(config_id):
+    cfg = get_exchange_config(config_id)
+    if not cfg:
+        return jsonify({"error": f"配置 '{config_id}' 不存在"}), 404
+    return jsonify(cfg)
+
+
+@app.route("/api/exchanges/<config_id>", methods=["PUT"])
+def api_save_exchange(config_id):
+    data = request.json or {}
+    try:
+        save_exchange_config(config_id, data)
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route("/api/exchanges/<config_id>", methods=["DELETE"])
+def api_delete_exchange(config_id):
+    ok = delete_exchange_config(config_id)
+    return jsonify({"success": ok})
+
+
+@app.route("/api/exchanges/<config_id>/test", methods=["GET"])
+def api_test_exchange(config_id):
+    return jsonify(test_exchange_connection(config_id))
+
+
+@app.route("/api/sandbox/balance", methods=["GET"])
+def api_sandbox_balance():
+    config_id = request.args.get("config_id", "")
+    cfg = get_exchange_config(config_id)
+    if not cfg:
+        return jsonify({"error": f"配置 '{config_id}' 不存在"})
+
+    try:
+        exchange = get_exchange_instance(config_id)
+        raw = exchange.fetch_balance()
+        balances = []
+        for currency, amounts in raw.items():
+            if currency in ("free", "used", "total", "info"):
+                continue
+            if isinstance(amounts, dict):
+                free = float(amounts.get("free", 0) or 0)
+                used = float(amounts.get("used", 0) or 0)
+                total = float(amounts.get("total", 0) or 0)
+                if total > 0:
+                    balances.append({"currency": currency, "free": free, "used": used, "total": total})
+        exchange.close()
+        return jsonify({"balances": balances, "sandbox": cfg.get("sandbox", False)})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
+@app.route("/api/sandbox/order", methods=["POST"])
+def api_sandbox_order():
+    data = request.json or {}
+    config_id = data.get("config_id", "")
+    cfg = get_exchange_config(config_id)
+    if not cfg:
+        return jsonify({"success": False, "error": f"配置 '{config_id}' 不存在"})
+
+    try:
+        exchange = get_exchange_instance(config_id)
+        symbol = data.get("symbol", "BTC/USDT")
+        side = data.get("side", "buy")
+        order_type = data.get("type", "market")
+        amount = float(data.get("amount", 0))
+        price = data.get("price")
+        if price:
+            price = float(price)
+
+        result = exchange.create_order(symbol, order_type, side, amount, price)
+        exchange.close()
+        return jsonify({
+            "success": True,
+            "order_id": str(result.get("id", "")),
+            "status": result.get("status", ""),
+            "filled": result.get("filled", 0),
+            "price": result.get("price", 0),
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route("/api/sandbox/orders", methods=["GET"])
+def api_sandbox_orders():
+    config_id = request.args.get("config_id", "")
+    symbol = request.args.get("symbol", "BTC/USDT")
+    cfg = get_exchange_config(config_id)
+    if not cfg:
+        return jsonify({"orders": []})
+
+    try:
+        exchange = get_exchange_instance(config_id)
+        raw_orders = exchange.fetch_open_orders(symbol)
+        orders = []
+        for o in raw_orders:
+            orders.append({
+                "id": str(o.get("id", "")),
+                "symbol": o.get("symbol", ""),
+                "side": o.get("side", ""),
+                "type": o.get("type", ""),
+                "price": o.get("price", 0),
+                "amount": o.get("amount", 0),
+                "filled": o.get("filled", 0),
+                "status": o.get("status", ""),
+            })
+        exchange.close()
+        return jsonify({"orders": orders})
+    except Exception as e:
+        return jsonify({"orders": [], "error": str(e)})
+
+
+@app.route("/api/sandbox/orders/cancel", methods=["POST"])
+def api_sandbox_cancel_orders():
+    data = request.json or {}
+    config_id = data.get("config_id", "")
+    symbol = data.get("symbol", "BTC/USDT")
+    cfg = get_exchange_config(config_id)
+    if not cfg:
+        return jsonify({"success": False, "error": "配置不存在"})
+
+    try:
+        exchange = get_exchange_instance(config_id)
+        open_orders = exchange.fetch_open_orders(symbol)
+        canceled = 0
+        for o in open_orders:
+            try:
+                exchange.cancel_order(o["id"], symbol)
+                canceled += 1
+            except Exception:
+                pass
+        exchange.close()
+        return jsonify({"success": True, "canceled": canceled})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route("/api/sandbox/positions", methods=["GET"])
+def api_sandbox_positions():
+    config_id = request.args.get("config_id", "")
+    cfg = get_exchange_config(config_id)
+    if not cfg:
+        return jsonify({"positions": []})
+
+    if cfg.get("market_type") == "spot":
+        return jsonify({"positions": []})
+
+    try:
+        exchange = get_exchange_instance(config_id)
+        raw_positions = exchange.fetch_positions()
+        positions = []
+        for p in raw_positions:
+            size = float(p.get("contracts", 0) or 0)
+            if size > 0:
+                positions.append({
+                    "symbol": p.get("symbol", ""),
+                    "side": p.get("side", ""),
+                    "size": size,
+                    "entry_price": float(p.get("entryPrice", 0) or 0),
+                    "mark_price": float(p.get("markPrice", 0) or 0),
+                    "unrealized_pnl": float(p.get("unrealizedPnl", 0) or 0),
+                    "leverage": int(p.get("leverage", 1) or 1),
+                })
+        exchange.close()
+        return jsonify({"positions": positions})
+    except Exception as e:
+        return jsonify({"positions": [], "error": str(e)})
 
 
 if __name__ == "__main__":
