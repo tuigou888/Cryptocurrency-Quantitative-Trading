@@ -1,39 +1,42 @@
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import datetime
+from dataclasses import dataclass
+from typing import Optional, Dict, Any
 
 from strategy.base import Signal, SignalType
-from exchange.base import OrderSide
-from config.settings import settings
 from utils.logger import logger
+from utils.validators import validate_positive, validate_non_negative
+from config.constants import RiskConstants
 
 
 @dataclass
 class RiskCheckResult:
     approved: bool
-    reason: str = ""
-    adjusted_amount: Optional[float] = None
     risk_level: str = "low"
+    adjusted_amount: Optional[float] = None
+    risk_message: Optional[str] = None
+    reason: Optional[str] = None
 
 
 class RiskManager:
-    def __init__(self):
-        risk_config = settings.risk
-        self.max_position_size_pct = risk_config.get("max_position_size_pct", 0.1)
-        self.max_total_exposure_pct = risk_config.get("max_total_exposure_pct", 0.5)
-        self.stop_loss_pct = risk_config.get("stop_loss_pct", 0.05)
-        self.take_profit_pct = risk_config.get("take_profit_pct", 0.1)
-        self.max_drawdown_pct = risk_config.get("max_drawdown_pct", 0.2)
-        self.max_daily_loss_pct = risk_config.get("max_daily_loss_pct", 0.03)
-        self.max_open_orders = risk_config.get("max_open_orders", 10)
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        if config is None:
+            config = {}
+        self.max_position_size_pct = config.get("max_position_size_pct", RiskConstants.DEFAULT_MAX_POSITION_SIZE_PCT)
+        self.max_total_exposure_pct = config.get("max_total_exposure_pct", RiskConstants.DEFAULT_MAX_TOTAL_EXPOSURE_PCT)
+        self.stop_loss_pct = config.get("stop_loss_pct", RiskConstants.DEFAULT_STOP_LOSS_PCT)
+        self.take_profit_pct = config.get("take_profit_pct", RiskConstants.DEFAULT_TAKE_PROFIT_PCT)
+        self.max_drawdown_pct = config.get("max_drawdown_pct", RiskConstants.DEFAULT_MAX_DRAWDOWN_PCT)
+        self.max_daily_loss_pct = config.get("max_daily_loss_pct", RiskConstants.DEFAULT_MAX_DAILY_LOSS_PCT)
+        self.max_open_orders = config.get("max_open_orders", RiskConstants.DEFAULT_MAX_OPEN_ORDERS)
 
+        self._current_equity = 0.0
+        self._peak_equity = 0.0
         self._daily_pnl = 0.0
         self._daily_start_equity = 0.0
         self._daily_reset_time = datetime.now()
+        self._open_orders = 0
         self._open_orders_count = 0
         self._total_exposure = 0.0
-        self._peak_equity = 0.0
-        self._current_equity = 0.0
 
     def update_equity(self, equity: float):
         self._current_equity = equity

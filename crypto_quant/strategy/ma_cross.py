@@ -1,11 +1,12 @@
 import pandas as pd
 import numpy as np
+from typing import Any
 
 from strategy.base import BaseStrategy, Signal, SignalType, OrderType
 
 
 class MACrossStrategy(BaseStrategy):
-    def __init__(self, fast_period: int = 10, slow_period: int = 30, **kwargs):
+    def __init__(self, fast_period: int = 10, slow_period: int = 30, **kwargs: Any) -> None:
         super().__init__(
             name="MA_Cross",
             params={

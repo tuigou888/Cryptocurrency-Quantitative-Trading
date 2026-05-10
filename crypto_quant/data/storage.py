@@ -3,7 +3,7 @@ import csv
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 import pandas as pd
 
@@ -28,11 +28,22 @@ class DataStorage:
         Path(self.csv_path).mkdir(parents=True, exist_ok=True)
         Path(self.sqlite_path).parent.mkdir(parents=True, exist_ok=True)
 
+        self._connection = None
         if self.storage_type == "sqlite":
             self._init_sqlite()
 
+    def _get_connection(self) -> sqlite3.Connection:
+        if self._connection is None:
+            self._connection = sqlite3.connect(self.sqlite_path)
+        return self._connection
+
+    def _close_connection(self):
+        if self._connection:
+            self._connection.close()
+            self._connection = None
+
     def _init_sqlite(self):
-        conn = sqlite3.connect(self.sqlite_path)
+        conn = self._get_connection()
         c = conn.cursor()
         c.execute("""
             CREATE TABLE IF NOT EXISTS ohlcv (
@@ -78,7 +89,6 @@ class DataStorage:
             )
         """)
         conn.commit()
-        conn.close()
 
     def save_ohlcv(self, candles: list, exchange: str, symbol: str, timeframe: str):
         if not candles:
@@ -90,19 +100,21 @@ class DataStorage:
             self._save_ohlcv_csv(candles, exchange, symbol, timeframe)
 
     def _save_ohlcv_sqlite(self, candles: list, exchange: str, symbol: str, timeframe: str):
-        conn = sqlite3.connect(self.sqlite_path)
+        conn = self._get_connection()
         c = conn.cursor()
-        for candle in candles:
-            c.execute("""
-                INSERT OR REPLACE INTO ohlcv (exchange, symbol, timeframe, timestamp, open, high, low, close, volume)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
+        data = [
+            (
                 exchange, symbol, timeframe,
                 candle.timestamp.isoformat(),
                 candle.open, candle.high, candle.low, candle.close, candle.volume,
-            ))
+            )
+            for candle in candles
+        ]
+        c.executemany("""
+            INSERT OR REPLACE INTO ohlcv (exchange, symbol, timeframe, timestamp, open, high, low, close, volume)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, data)
         conn.commit()
-        conn.close()
         logger.debug(f"Saved {len(candles)} candles to SQLite for {exchange}/{symbol}/{timeframe}")
 
     def _save_ohlcv_csv(self, candles: list, exchange: str, symbol: str, timeframe: str):
@@ -130,9 +142,9 @@ class DataStorage:
 
     def _load_ohlcv_sqlite(self, exchange: str, symbol: str, timeframe: str,
                            start: Optional[datetime], end: Optional[datetime]) -> pd.DataFrame:
-        conn = sqlite3.connect(self.sqlite_path)
+        conn = self._get_connection()
         query = "SELECT timestamp, open, high, low, close, volume FROM ohlcv WHERE exchange=? AND symbol=? AND timeframe=?"
-        params = [exchange, symbol, timeframe]
+        params: List[Any] = [exchange, symbol, timeframe]
 
         if start:
             query += " AND timestamp >= ?"
@@ -143,7 +155,6 @@ class DataStorage:
 
         query += " ORDER BY timestamp ASC"
         df = pd.read_sql_query(query, conn, params=params)
-        conn.close()
 
         if not df.empty:
             df["timestamp"] = pd.to_datetime(df["timestamp"])
@@ -175,11 +186,13 @@ class DataStorage:
                    price: float, amount: float, cost: float, strategy: str = ""):
         if self.storage_type != "sqlite":
             return
-        conn = sqlite3.connect(self.sqlite_path)
+        conn = self._get_connection()
         c = conn.cursor()
         c.execute("""
             INSERT INTO trades (exchange, symbol, order_id, side, price, amount, cost, timestamp, strategy)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (exchange, symbol, order_id, side, price, amount, cost, datetime.now().isoformat(), strategy))
         conn.commit()
-        conn.close()
+
+    def __del__(self):
+        self._close_connection()

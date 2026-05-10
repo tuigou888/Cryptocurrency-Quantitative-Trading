@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Optional, Dict, Any, Union
 
 import pandas as pd
 import numpy as np
@@ -37,28 +37,28 @@ class StrategyState:
     position_size: float = 0.0
     entry_price: float = 0.0
     unrealized_pnl: float = 0.0
-    indicators: dict = field(default_factory=dict)
+    indicators: Dict[str, Any] = field(default_factory=dict)
 
 
 class BaseStrategy(ABC):
-    def __init__(self, name: str, params: dict = None):
+    def __init__(self, name: str, params: Optional[Dict[str, Any]] = None):
         self.name = name
         self.params = params or {}
         self.state = StrategyState()
-        self._data = None
+        self._data: Optional[pd.DataFrame] = None
 
     @property
-    def data(self) -> pd.DataFrame:
+    def data(self) -> Optional[pd.DataFrame]:
         return self._data
 
     @data.setter
     def data(self, value: pd.DataFrame):
         self._data = value
 
-    def set_param(self, key: str, value):
+    def set_param(self, key: str, value: Any) -> None:
         self.params[key] = value
 
-    def get_param(self, key: str, default=None):
+    def get_param(self, key: str, default: Any = None) -> Any:
         return self.params.get(key, default)
 
     @abstractmethod
@@ -77,11 +77,11 @@ class BaseStrategy(ABC):
             signal.timestamp = data.index[-1]
         return signal
 
-    def reset(self):
+    def reset(self) -> None:
         self.state = StrategyState()
         self._data = None
 
-    def info(self) -> dict:
+    def info(self) -> Dict[str, Any]:
         return {
             "name": self.name,
             "params": self.params,

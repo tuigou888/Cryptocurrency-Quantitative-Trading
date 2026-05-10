@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Dict
 
 import pandas as pd
 import numpy as np
@@ -74,8 +74,9 @@ class BacktestEngine:
         logger.info(f"Starting backtest: {self.strategy.name} | {len(self.data)} bars")
         self.strategy.reset()
 
-        for i in range(len(self.data)):
-            window = self.data.iloc[:i + 1].copy()
+        data_len = len(self.data)
+        for i in range(data_len):
+            window = self.data.iloc[:i + 1]
             current_price = self.data["close"].iloc[i]
             current_time = self.data.index[i]
 
