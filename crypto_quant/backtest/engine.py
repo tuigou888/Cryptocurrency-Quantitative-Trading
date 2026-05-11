@@ -74,13 +74,14 @@ class BacktestEngine:
         logger.info(f"Starting backtest: {self.strategy.name} | {len(self.data)} bars")
         self.strategy.reset()
 
+        self.strategy.indicators = self.strategy.calculate_indicators(self.data.copy())
+
         data_len = len(self.data)
         for i in range(data_len):
-            window = self.data.iloc[:i + 1]
             current_price = self.data["close"].iloc[i]
             current_time = self.data.index[i]
 
-            signal = self.strategy.on_tick(window)
+            signal = self.strategy.on_tick_with_index(i)
 
             if signal and signal.signal_type != SignalType.HOLD:
                 self._process_signal(signal, current_price, current_time)

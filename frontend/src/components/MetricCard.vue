@@ -24,25 +24,28 @@ const props = withDefaults(defineProps<{
 });
 
 const formattedValue = computed(() => {
+  if (props.value == null) return '--';
   if (typeof props.value === 'string') return props.value;
   
   switch (props.type) {
     case 'currency':
-      return `$${props.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      return `$${(props.value as number).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     case 'percent':
-      return `${props.value.toFixed(2)}%`;
+      return `${(props.value as number).toFixed(2)}%`;
     default:
-      return typeof props.value === 'number' ? props.value.toLocaleString() : props.value;
+      return (props.value as number).toLocaleString();
   }
 });
 
 const valueClass = computed(() => {
+  if (props.delta == null) return 'neutral';
   if (props.delta > 0) return 'positive';
   if (props.delta < 0) return 'negative';
   return 'neutral';
 });
 
 const deltaClass = computed(() => {
+  if (props.delta == null) return '';
   return props.delta >= 0 ? 'positive' : 'negative';
 });
 </script>

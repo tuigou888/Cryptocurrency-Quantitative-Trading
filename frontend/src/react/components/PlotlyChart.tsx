@@ -1,9 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 
 interface PlotlyChartProps {
-  data: any[];
+  data?: any[];
   layout?: any;
   config?: any;
+  chart?: any;
   style?: React.CSSProperties;
 }
 
@@ -26,17 +27,32 @@ function loadPlotly(): Promise<any> {
   });
 }
 
-const PlotlyChart: React.FC<PlotlyChartProps> = ({ data, layout, config, style }) => {
+function getChartSpec(props: PlotlyChartProps) {
+  if (props.chart && props.chart.data) {
+    return {
+      data: props.chart.data,
+      layout: { ...defaultLayout, ...(props.chart.layout || {}) },
+    };
+  }
+  if (props.data && props.data.length > 0) {
+    return { data: props.data, layout: { ...defaultLayout, ...props.layout } };
+  }
+  return null;
+}
+
+const PlotlyChart: React.FC<PlotlyChartProps> = ({ data, layout, config, chart, style }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!containerRef.current || !data.length) return;
+    if (!containerRef.current) return;
+    const spec = getChartSpec({ data, layout, config, chart });
+    if (!spec) return;
+
     loadPlotly().then((Plotly: any) => {
-      const l = { ...defaultLayout, ...layout };
       const c = { responsive: true, displaylogo: false, ...config };
-      Plotly.newPlot(containerRef.current, data, l, c);
+      Plotly.newPlot(containerRef.current, spec.data, spec.layout, c);
     }).catch(console.error);
-  }, [data, layout, config]);
+  }, [data, layout, config, chart]);
 
   return <div ref={containerRef} style={{ width: '100%', minHeight: '300px', ...style }} />;
 };

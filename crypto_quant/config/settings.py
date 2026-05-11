@@ -84,5 +84,15 @@ class Settings:
                 return default
         return value
 
+    def to_dict(self):
+        return {
+            "exchanges": self.exchanges,
+            "trading": self.trading,
+            "risk": self.risk,
+            "backtest": self.backtest,
+            "notification": self.notification,
+            "data": self.data,
+        }
+
 
 settings = Settings()

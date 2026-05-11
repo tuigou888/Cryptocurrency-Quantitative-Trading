@@ -46,6 +46,7 @@ class BaseStrategy(ABC):
         self.params = params or {}
         self.state = StrategyState()
         self._data: Optional[pd.DataFrame] = None
+        self.indicators: Optional[pd.DataFrame] = None
 
     @property
     def data(self) -> Optional[pd.DataFrame]:
@@ -77,9 +78,20 @@ class BaseStrategy(ABC):
             signal.timestamp = data.index[-1]
         return signal
 
+    def on_tick_with_index(self, idx: int) -> Optional[Signal]:
+        if self.indicators is None:
+            return None
+        window = self.indicators.iloc[:idx + 1]
+        self._data = window
+        signal = self.generate_signal(window)
+        if signal and signal.timestamp is None and idx >= 0:
+            signal.timestamp = self.indicators.index[idx]
+        return signal
+
     def reset(self) -> None:
         self.state = StrategyState()
         self._data = None
+        self.indicators = None
 
     def info(self) -> Dict[str, Any]:
         return {

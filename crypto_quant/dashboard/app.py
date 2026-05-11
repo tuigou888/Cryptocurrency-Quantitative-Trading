@@ -35,8 +35,21 @@ PLOTLY_CONFIG = {"displayModeBar": True, "displaylogo": False, "responsive": Tru
 DARK_LAYOUT = dict(template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#c0c0d0"))
 DARK_MARGIN = dict(l=60, r=20, t=40, b=40)
 
+_CACHE = {}
+_CACHE_TTL = 300
 
-def generate_sample_data(days=180):
+
+def get_cached(key, builder, *args, **kwargs):
+    import time
+    now = time.time()
+    if key in _CACHE and now - _CACHE[key]["ts"] < _CACHE_TTL:
+        return _CACHE[key]["data"]
+    data = builder(*args, **kwargs)
+    _CACHE[key] = {"data": data, "ts": now}
+    return data
+
+
+def generate_sample_data(days=60):
     np.random.seed(42)
     periods = days * 24
     dates = pd.date_range(end=pd.Timestamp.now(), periods=periods, freq="1h")
@@ -74,7 +87,7 @@ def color_pct(val):
 
 
 def build_overview_data():
-    result, df = run_backtest("ma_cross", 180, 10000)
+    result, df = run_backtest("ma_cross", 60, 10000)
 
     eq_df = pd.DataFrame(result.equity_curve)
     fig_eq = go.Figure()
@@ -210,7 +223,7 @@ def build_backtest_data(strategy_id, days, capital, commission, slippage, params
     }
 
 
-def build_compare_data(days=180, capital=10000):
+def build_compare_data(days=60, capital=10000):
     results = {}
     for sid, info in STRATEGY_MAP.items():
         strat = info["cls"]()
@@ -271,12 +284,14 @@ def build_compare_data(days=180, capital=10000):
     }
 
 
-def build_risk_data(days=180, capital=10000):
+def build_risk_data(days=60, capital=10000):
     result, df = run_backtest("ma_cross", days, capital)
     eq_df = pd.DataFrame(result.equity_curve)
     if eq_df.empty:
-        return {"metrics": {}, "charts": {}}
+        return {"summary": {}, "risk_metrics": [], "drawdown_chart": {}, "dd_dist_chart": {}, "return_dist_chart": {}, "rolling_sharpe_chart": {}}
 
+    eq_df["timestamp"] = pd.to_datetime(eq_df["timestamp"])
+    eq_df.set_index("timestamp", inplace=True)
     eq_df["returns"] = eq_df["equity"].pct_change()
     eq_df["drawdown"] = (eq_df["equity"] - eq_df["equity"].cummax()) / eq_df["equity"].cummax() * 100
     eq_df["peak"] = eq_df["equity"].cummax()
@@ -289,7 +304,7 @@ def build_risk_data(days=180, capital=10000):
     calmar = (result.total_return_pct / result.max_drawdown_pct) if result.max_drawdown_pct > 0 else 0
 
     fig_dd = go.Figure()
-    fig_dd.add_trace(go.Scatter(x=eq_df["timestamp"], y=eq_df["drawdown"], fill="tozeroy",
+    fig_dd.add_trace(go.Scatter(x=eq_df.index, y=eq_df["drawdown"], fill="tozeroy",
                                 fillcolor="rgba(255,71,87,0.2)", line=dict(color="#ff4757", width=1.5), name="回撤"))
     fig_dd.update_layout(**DARK_LAYOUT, height=400, xaxis_title="时间", yaxis_title="回撤 (%)", margin=DARK_MARGIN)
 
@@ -1031,7 +1046,7 @@ def index():
 
 @app.route("/api/overview")
 def api_overview():
-    return jsonify(build_overview_data())
+    return jsonify(get_cached("overview", build_overview_data))
 
 
 @app.route("/api/backtest", methods=["POST"])
@@ -1039,7 +1054,7 @@ def api_backtest():
     data = request.json or {}
     return jsonify(build_backtest_data(
         strategy_id=data.get("strategy", "ma_cross"),
-        days=data.get("days", 180),
+        days=data.get("days", 60),
         capital=data.get("capital", 10000),
         commission=data.get("commission", 0.001),
         slippage=data.get("slippage", 0.0005),
@@ -1049,12 +1064,24 @@ def api_backtest():
 
 @app.route("/api/compare")
 def api_compare():
-    return jsonify(build_compare_data())
+    return jsonify(get_cached("compare", build_compare_data))
 
 
 @app.route("/api/risk")
 def api_risk():
-    return jsonify(build_risk_data())
+    return jsonify(get_cached("risk", build_risk_data))
+
+
+@app.route("/api/config", methods=["GET", "POST"])
+def api_config():
+    cfg = settings.to_dict() if hasattr(settings, 'to_dict') else {}
+    if request.method == "POST":
+        data = request.json or {}
+        for k, v in data.items():
+            if hasattr(settings, k):
+                setattr(settings, k, v)
+        return jsonify({"success": True, "config": cfg})
+    return jsonify(cfg)
 
 
 @app.route("/api/live")
@@ -1096,8 +1123,18 @@ def api_live():
     })
 
 
-@app.route("/api/exchanges", methods=["GET"])
+@app.route("/api/exchanges", methods=["GET", "POST"])
 def api_list_exchanges():
+    if request.method == "POST":
+        data = request.json or {}
+        config_id = data.get("id", data.get("exchange_id", ""))
+        if not config_id:
+            return jsonify({"error": "缺少配置 ID"}), 400
+        try:
+            save_exchange_config(config_id, data)
+            return jsonify({"success": True})
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 500
     return jsonify(list_exchange_configs())
 
 

@@ -7,49 +7,39 @@
     </div>
     <template v-else-if="data">
       <div class="metrics-row">
-        <MetricCard label="总权益" :value="data.key_metrics.total_equity" type="currency" :delta="data.key_metrics.pnl_percent" />
-        <MetricCard label="总盈亏" :value="data.key_metrics.total_pnl" type="currency" :delta="data.key_metrics.pnl_percent" />
-        <MetricCard label="胜率" :value="data.key_metrics.win_rate" type="percent" />
-        <MetricCard label="夏普比率" :value="data.key_metrics.sharpe_ratio" />
-        <MetricCard label="最大回撤" :value="data.key_metrics.max_drawdown" type="percent" :delta="-data.key_metrics.max_drawdown" :positive="false" />
+        <MetricCard label="总收益率" :value="data.metrics.total_return_pct" type="percent" :delta="data.metrics.total_return_pct" />
+        <MetricCard label="最终资金" :value="data.metrics.final_capital" type="currency" />
+        <MetricCard label="胜率" :value="data.metrics.win_rate" type="percent" />
+        <MetricCard label="夏普比率" :value="data.metrics.sharpe_ratio" />
+        <MetricCard label="最大回撤" :value="data.metrics.max_drawdown_pct" type="percent" :positive="false" />
       </div>
       <div class="charts-row">
         <div class="chart-box chart-full">
           <h2>📈 权益曲线</h2>
-          <PlotlyChart :data="equityChartData" />
+          <PlotlyChart :chart="data.equity_chart" style="height: 400px" />
         </div>
       </div>
       <div class="charts-row">
         <div class="chart-box">
-          <h2>📊 月度收益</h2>
-          <PlotlyChart :data="monthlyChartData" />
+          <h2>📊 K线走势</h2>
+          <PlotlyChart :chart="data.kline_chart" style="height: 400px" />
         </div>
         <div class="chart-box">
-          <h2>🤖 活跃策略</h2>
-          <table class="data-table">
-            <thead><tr><th>策略名称</th><th>状态</th><th>盈亏</th><th>交易次数</th></tr></thead>
-            <tbody>
-              <tr v-for="s in data.active_strategies" :key="s.name">
-                <td>{{ s.name }}</td>
-                <td><span :class="['badge', s.status === 'running' ? 'badge-running' : 'badge-stopped']">{{ s.status }}</span></td>
-                <td :class="s.pnl >= 0 ? 'positive' : 'negative'">${{ s.pnl.toFixed(2) }}</td>
-                <td>{{ s.trades }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <h2>📊 月度收益</h2>
+          <PlotlyChart :chart="data.monthly_chart" style="height: 400px" />
         </div>
       </div>
       <div class="page-section">
-        <h2>📝 最近交易</h2>
+        <h2>📝 交易统计</h2>
         <table class="data-table">
-          <thead><tr><th>时间</th><th>交易对</th><th>方向</th><th>价格</th><th>数量</th><th>盈亏</th></tr></thead>
+          <thead><tr><th>指标</th><th>数值</th></tr></thead>
           <tbody>
-            <tr v-for="t in data.recent_trades" :key="t.timestamp">
-              <td>{{ t.timestamp }}</td><td>{{ t.symbol }}</td>
-              <td :class="t.side === 'buy' ? 'positive' : 'negative'">{{ t.side.toUpperCase() }}</td>
-              <td>${{ t.price.toLocaleString() }}</td><td>{{ t.amount }}</td>
-              <td :class="t.pnl >= 0 ? 'positive' : 'negative'">${{ t.pnl.toFixed(2) }}</td>
-            </tr>
+            <tr><td>盈利因子</td><td>{{ data.metrics.profit_factor }}</td></tr>
+            <tr><td>总交易次数</td><td>{{ data.metrics.total_trades }}</td></tr>
+            <tr><td>盈利交易</td><td>{{ data.metrics.winning_trades }}</td></tr>
+            <tr><td>亏损交易</td><td>{{ data.metrics.losing_trades }}</td></tr>
+            <tr><td>平均盈利</td><td class="positive">${{ data.metrics.avg_profit }}</td></tr>
+            <tr><td>平均亏损</td><td class="negative">${{ data.metrics.avg_loss }}</td></tr>
           </tbody>
         </table>
       </div>
@@ -62,55 +52,33 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted } from 'vue';
 import MetricCard from '@components/MetricCard.vue';
 import PlotlyChart from '@components/PlotlyChart.vue';
 import { overviewApi } from '@shared/api';
 
 interface OverviewData {
-  key_metrics: {
-    total_equity: number;
-    total_pnl: number;
-    pnl_percent: number;
-    win_rate: number;
+  metrics: {
+    total_return_pct: number;
     sharpe_ratio: number;
-    max_drawdown: number;
+    max_drawdown_pct: number;
+    win_rate: number;
+    profit_factor: number;
+    total_trades: number;
+    avg_profit: number;
+    avg_loss: number;
+    winning_trades: number;
+    losing_trades: number;
+    final_capital: number;
+    initial_capital: number;
   };
-  equity_curve: Array<{ date: string; equity: number }>;
-  monthly_returns: Array<{ month: string; return: number }>;
-  active_strategies: Array<{ name: string; status: string; pnl: number; trades: number }>;
-  recent_trades: Array<{ timestamp: string; symbol: string; side: string; price: number; amount: number; pnl: number }>;
+  equity_chart: any;
+  kline_chart: any;
+  monthly_chart: any;
 }
 
 const loading = ref(true);
 const data = ref<OverviewData | null>(null);
-
-const equityChartData = computed(() => {
-  if (!data.value?.equity_curve) return [];
-  return [{
-    x: data.value.equity_curve.map(p => p.date),
-    y: data.value.equity_curve.map(p => p.equity),
-    type: 'scatter',
-    mode: 'lines',
-    fill: 'tozeroy',
-    line: { color: '#00d4aa', width: 2 },
-    fillcolor: 'rgba(0, 212, 170, 0.08)',
-  }];
-});
-
-const monthlyChartData = computed(() => {
-  if (!data.value?.monthly_returns) return [];
-  return [{
-    x: data.value.monthly_returns.map(m => m.month),
-    y: data.value.monthly_returns.map(m => m.return),
-    type: 'bar',
-    marker: {
-      color: data.value!.monthly_returns.map(m => m.return >= 0 ? '#00d4aa' : '#ff4757'),
-    },
-    text: data.value!.monthly_returns.map(m => `${m.return.toFixed(1)}%`),
-    textposition: 'auto',
-  }];
-});
 
 async function loadData() {
   loading.value = true;
