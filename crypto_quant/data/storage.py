@@ -29,6 +29,9 @@ class DataStorage:
         Path(self.sqlite_path).parent.mkdir(parents=True, exist_ok=True)
 
         self._connection = None
+        self._batch_size = 1000
+        self._pending_candles = []
+        self._pending_meta = {}
         if self.storage_type == "sqlite":
             self._init_sqlite()
 
@@ -88,6 +91,9 @@ class DataStorage:
                 strategy TEXT
             )
         """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_ohlcv_lookup ON ohlcv(exchange, symbol, timeframe, timestamp)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_tickers_lookup ON tickers(exchange, symbol, timestamp)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_trades_lookup ON trades(exchange, symbol, timestamp)")
         conn.commit()
 
     def save_ohlcv(self, candles: list, exchange: str, symbol: str, timeframe: str):
@@ -95,11 +101,25 @@ class DataStorage:
             return
 
         if self.storage_type == "sqlite":
-            self._save_ohlcv_sqlite(candles, exchange, symbol, timeframe)
+            self._pending_meta = {"exchange": exchange, "symbol": symbol, "timeframe": timeframe}
+            self._pending_candles.extend(candles)
+
+            if len(self._pending_candles) >= self._batch_size:
+                self.flush_pending()
         else:
             self._save_ohlcv_csv(candles, exchange, symbol, timeframe)
 
-    def _save_ohlcv_sqlite(self, candles: list, exchange: str, symbol: str, timeframe: str):
+    def flush_pending(self):
+        if self._pending_candles and self._pending_meta:
+            self._do_save_ohlcv_sqlite(
+                self._pending_candles,
+                self._pending_meta["exchange"],
+                self._pending_meta["symbol"],
+                self._pending_meta["timeframe"]
+            )
+            self._pending_candles = []
+
+    def _do_save_ohlcv_sqlite(self, candles: list, exchange: str, symbol: str, timeframe: str):
         conn = self._get_connection()
         c = conn.cursor()
         data = [
@@ -195,4 +215,13 @@ class DataStorage:
         conn.commit()
 
     def __del__(self):
+        self.flush_pending()
         self._close_connection()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.flush_pending()
+        self._close_connection()
+        return False

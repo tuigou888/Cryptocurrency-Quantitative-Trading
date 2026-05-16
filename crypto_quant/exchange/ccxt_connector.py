@@ -10,6 +10,7 @@ from exchange.base import (
 )
 from config.settings import settings
 from utils.logger import logger
+from utils.api_client import CircuitBreaker, with_exponential_backoff
 
 
 class CcxtConnector(BaseExchange):
@@ -17,6 +18,10 @@ class CcxtConnector(BaseExchange):
         self.exchange_id = exchange_id
         self.market_type = market_type
         self._exchange = self._create_exchange()
+        self._circuit_breaker = CircuitBreaker(
+            failure_threshold=5,
+            recovery_timeout_seconds=60.0,
+        )
 
     def _create_exchange(self) -> ccxt.Exchange:
         exchange_config = settings.exchanges.get(self.exchange_id)
@@ -112,30 +117,66 @@ class CcxtConnector(BaseExchange):
         )
 
     def get_ticker(self, symbol: str) -> Ticker:
-        try:
-            raw = self._exchange.fetch_ticker(symbol)
-            return self._parse_ticker(raw)
-        except ccxt.BaseError as e:
-            logger.error(f"Failed to fetch ticker for {symbol}: {e}")
-            raise
+        if not self._circuit_breaker.can_execute():
+            raise RuntimeError(f"Circuit breaker open for {self.exchange_id}")
+
+        last_error = None
+        for attempt in range(3):
+            try:
+                raw = self._exchange.fetch_ticker(symbol)
+                self._circuit_breaker.record_success()
+                return self._parse_ticker(raw)
+            except ccxt.BaseError as e:
+                last_error = e
+                if attempt < 2:
+                    delay = 1.0 * (2 ** attempt)
+                    logger.warning(f"Ticker fetch attempt {attempt + 1} failed: {e}, retrying in {delay}s")
+                    time.sleep(delay)
+                else:
+                    self._circuit_breaker.record_failure()
+                    logger.error(f"Failed to fetch ticker for {symbol} after 3 attempts: {e}")
+            except Exception as e:
+                self._circuit_breaker.record_failure()
+                logger.error(f"Unexpected error fetching ticker for {symbol}: {e}")
+                raise
+
+        raise last_error
 
     def get_ohlcv(self, symbol: str, timeframe: str = "1h", limit: int = 100) -> list:
-        try:
-            raw_candles = self._exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
-            candles = []
-            for c in raw_candles:
-                candles.append(OHLCV(
-                    timestamp=datetime.fromtimestamp(c[0] / 1000),
-                    open=c[1],
-                    high=c[2],
-                    low=c[3],
-                    close=c[4],
-                    volume=c[5],
-                ))
-            return candles
-        except ccxt.BaseError as e:
-            logger.error(f"Failed to fetch OHLCV for {symbol}: {e}")
-            raise
+        if not self._circuit_breaker.can_execute():
+            raise RuntimeError(f"Circuit breaker open for {self.exchange_id}")
+
+        last_error = None
+        for attempt in range(3):
+            try:
+                raw_candles = self._exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+                self._circuit_breaker.record_success()
+                candles = []
+                for c in raw_candles:
+                    candles.append(OHLCV(
+                        timestamp=datetime.fromtimestamp(c[0] / 1000),
+                        open=c[1],
+                        high=c[2],
+                        low=c[3],
+                        close=c[4],
+                        volume=c[5],
+                    ))
+                return candles
+            except ccxt.BaseError as e:
+                last_error = e
+                if attempt < 2:
+                    delay = 1.0 * (2 ** attempt)
+                    logger.warning(f"OHLCV fetch attempt {attempt + 1} failed: {e}, retrying in {delay}s")
+                    time.sleep(delay)
+                else:
+                    self._circuit_breaker.record_failure()
+                    logger.error(f"Failed to fetch OHLCV for {symbol} after 3 attempts: {e}")
+            except Exception as e:
+                self._circuit_breaker.record_failure()
+                logger.error(f"Unexpected error fetching OHLCV for {symbol}: {e}")
+                raise
+
+        raise last_error
 
     def get_order_book(self, symbol: str, limit: int = 20) -> dict:
         try:

@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CryptoQuant ECharts Demo</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d0d1a;color:#e0e0f0;padding:24px}
+h1{font-size:22px;margin-bottom:8px;color:#00d4aa}
+.subtitle{font-size:13px;color:#8888aa;margin-bottom:20px}
+.controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:20px}
+.controls label{font-size:13px;color:#8888aa}
+.controls select,.controls input{background:#1e1e2e;color:#e0e0f0;border:1px solid #3d3d5c;border-radius:6px;padding:6px 12px;font-size:13px}
+.controls select:focus,.controls input:focus{outline:none;border-color:#00d4aa}
+.btn{padding:8px 20px;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:all .2s}
+.btn-primary{background:#00d4aa;color:#0d0d1a}
+.btn-primary:hover{background:#00e8bb}
+.btn-primary:disabled{opacity:0.5;cursor:not-allowed}
+.charts-row{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px}
+.chart-box{background:#1a1a2e;border-radius:12px;padding:16px;border:1px solid #2a2a4a}
+.chart-box h3{font-size:14px;color:#c0c0d0;margin-bottom:10px}
+.chart-full{grid-column:1/-1}
+.chart-container{width:100%;height:380px}
+.loading{text-align:center;padding:40px;color:#8888aa}
+.error-box{background:rgba(255,71,87,0.1);border:1px solid #ff4757;border-radius:8px;padding:12px;color:#ff4757;font-size:13px;margin-bottom:16px}
+.status{font-size:12px;margin-top:4px}
+.status-success{color:#00d4aa}
+.status-error{color:#ff4757}
+.api-selector{margin-bottom:16px}
+.api-selector a{margin-right:12px;color:#8888aa;text-decoration:none;font-size:12px;cursor:pointer}
+.api-selector a.active{color:#00d4aa;font-weight:600}
+@media(max-width:768px){.charts-row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<h1>ECharts 量化图表验证页</h1>
+<div class="subtitle">后端 API: <code>/api/v1/charts/*</code> &rarr; 标准化 JSON &rarr; ECharts 渲染</div>
+
+<div class="controls">
+  <label>策略</label>
+  <select id="strategy">
+    <option value="ma_cross">MA均线交叉</option>
+    <option value="rsi">RSI超买超卖</option>
+    <option value="grid">网格交易</option>
+  </select>
+  <label>天数</label>
+  <input id="days" type="number" value="60" min="7" max="365" style="width:70px">
+  <label>资金</label>
+  <input id="capital" type="number" value="10000" style="width:90px">
+  <button class="btn btn-primary" onclick="loadAll()">加载全部图表</button>
+  <span id="loadStatus" class="status"></span>
+</div>
+
+<div id="errorContainer"></div>
+
+<div class="charts-row">
+  <div class="chart-box chart-full">
+    <h3>权益曲线 (equity_curve)</h3>
+    <div id="chart-equity" class="chart-container"></div>
+  </div>
+</div>
+
+<div class="charts-row">
+  <div class="chart-box">
+    <h3>动态回撤 (drawdown)</h3>
+    <div id="chart-drawdown" class="chart-container"></div>
+  </div>
+  <div class="chart-box">
+    <h3>月度收益热力图 (monthly_heatmap)</h3>
+    <div id="chart-heatmap" class="chart-container"></div>
+  </div>
+</div>
+
+<div class="charts-row">
+  <div class="chart-box">
+    <h3>盈亏分布 (pnl_distribution)</h3>
+    <div id="chart-pnl" class="chart-container"></div>
+  </div>
+  <div class="chart-box">
+    <h3>K线 + 成交量 (kline)</h3>
+    <div id="chart-kline" class="chart-container"></div>
+  </div>
+</div>
+
+<div class="charts-row">
+  <div class="chart-box chart-full">
+    <h3>策略对比 - 权益曲线 (compare)</h3>
+    <div id="chart-compare" class="chart-container"></div>
+  </div>
+</div>
+
+<script>
+const API_BASE = '/api/v1/charts';
+const COLOR_POS = '#00d4aa';
+const COLOR_NEG = '#ff4757';
+const GRID_COLOR = 'rgba(55,65,81,0.35)';
+const TEXT_COLOR = '#c0c0d0';
+const LABEL_COLOR = '#9ca3af';
+
+const charts = {};
+let allResolved = {};
+
+function getBaseOption(title, subtitle) {
+  return {
+    backgroundColor: 'transparent',
+    title: { text: title, subtext: subtitle || '', left: 'center', textStyle: { color: '#e0e0f0', fontSize: 14 }, subtextStyle: { color: '#8888aa', fontSize: 10 } },
+    tooltip: { trigger: 'axis', backgroundColor: 'rgba(23,23,42,0.95)', borderColor: '#3d3d5c', textStyle: { color: '#e0e0f0', fontSize: 12 }, axisPointer: { type: 'cross' } },
+    legend: { bottom: 0, textStyle: { color: TEXT_COLOR, fontSize: 10 } },
+    grid: { left: 65, right: 25, top: 55, bottom: 45 },
+    xAxis: { type: 'category', axisLabel: { color: LABEL_COLOR, fontSize: 10 }, axisLine: { lineStyle: { color: GRID_COLOR } } },
+    yAxis: { type: 'value', splitLine: { lineStyle: { color: GRID_COLOR, type: 'dashed' } }, axisLabel: { color: LABEL_COLOR, fontSize: 10 } },
+    dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 20 }],
+  };
+}
+
+function transformEquity(json) {
+  const d = json.data;
+  const opt = getBaseOption(d.title, d.subtitle);
+  opt.xAxis = { ...opt.xAxis, type: 'time', data: d.x_axis.data };
+  opt.yAxis = { ...opt.yAxis, name: '权益 (USDT)', nameTextStyle: { color: TEXT_COLOR } };
+  opt.series = d.series.map(function(s, i) {
+    const isBench = s.name && s.name.indexOf('基准') >= 0;
+    return {
+      name: s.name,
+      type: 'line',
+      data: s.data,
+      smooth: s.smooth !== false,
+      showSymbol: false,
+      symbol: 'none',
+      lineStyle: s.lineStyle || (isBench ? { color: '#ffa502', type: 'dashed', width: 1.5 } : { color: COLOR_POS, width: 2 }),
+      areaStyle: (i === 0) ? { color: 'rgba(0,212,170,0.08)' } : undefined,
+    };
+  });
+
+  var capAnn = d.annotations && d.annotations.find(function(a) { return a.type === 'initial_capital'; });
+  if (capAnn) {
+    opt.series[0].markLine = { silent: true, symbol: 'none', data: [{ yAxis: capAnn.y, lineStyle: { color: '#ffa502', type: 'dashed' }, label: { formatter: '初始资金 $' + capAnn.y.toLocaleString() } }] };
+  }
+  return opt;
+}
+
+function transformDrawdown(json) {
+  const d = json.data;
+  const opt = getBaseOption(d.title, d.subtitle);
+  opt.xAxis = { ...opt.xAxis, type: 'time', data: d.x_axis.data };
+  opt.yAxis = { ...opt.yAxis, max: 0, name: '回撤 (%)', nameTextStyle: { color: TEXT_COLOR }, axisLabel: { ...opt.yAxis.axisLabel, formatter: '{value}%' } };
+  opt.legend = undefined;
+  opt.series = [{
+    name: d.series[0] ? d.series[0].name : '回撤',
+    type: 'line', data: (d.series[0] || {}).data || [],
+    showSymbol: false, symbol: 'none',
+    lineStyle: { color: COLOR_NEG, width: 1.5 },
+    areaStyle: { color: 'rgba(255,71,87,0.15)' },
+  }];
+  return opt;
+}
+
+function transformHeatmap(json) {
+  const d = json.data;
+  const s = d.series[0];
+  if (!s || !s.data || s.data.length === 0) {
+    return getBaseOption(d.title, '数据不足');
+  }
+  const va = d.annotations && d.annotations.find(function(a) { return a.type === 'visualMap'; }) || {};
+  const heatData = s.data.map(function(v) { return [v.x, v.y, v.value]; });
+  return {
+    backgroundColor: 'transparent',
+    title: { text: d.title, subtext: d.subtitle || '', left: 'center', textStyle: { color: '#e0e0f0', fontSize: 14 }, subtextStyle: { color: '#8888aa', fontSize: 10 } },
+    tooltip: { position: 'top', backgroundColor: 'rgba(23,23,42,0.95)', borderColor: '#3d3d5c', textStyle: { color: '#e0e0f0' }, formatter: function(p) { return p.value[1] + '年' + p.value[0] + '月: ' + p.value[2] + '%'; } },
+    grid: { left: 80, right: 30, top: 55, bottom: 55 },
+    xAxis: { type: 'category', data: d.x_axis.data, splitArea: { show: true }, axisLabel: { color: LABEL_COLOR, fontSize: 10, formatter: '{value}月' } },
+    yAxis: { type: 'category', data: s.yAxisData || [], splitArea: { show: true }, axisLabel: { color: LABEL_COLOR, fontSize: 10 } },
+    visualMap: { min: va.min || -10, max: va.max || 10, calculable: true, orient: 'horizontal', left: 'center', bottom: 10, inRange: { color: (va.inRange || {}).color || [COLOR_NEG, '#2a2a4a', COLOR_POS] }, textStyle: { color: LABEL_COLOR } },
+    series: [{ name: s.name || '月度收益率', type: 'heatmap', data: heatData, label: { show: true, color: '#e0e0f0', fontSize: 10, formatter: function(p) { return p.value[2] + '%'; } }, emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.5)' } } }],
+  };
+}
+
+function transformPnl(json) {
+  const d = json.data;
+  const opt = getBaseOption(d.title, d.subtitle);
+  const barS = d.series.find(function(s) { return s.type === 'bar'; });
+  const lineS = d.series.find(function(s) { return s.type === 'line'; });
+  opt.xAxis = { ...opt.xAxis, data: barS ? barS.xAxisData || d.x_axis.data : [], name: '盈亏 (USDT)', nameTextStyle: { color: TEXT_COLOR } };
+  opt.yAxis = [
+    { ...opt.yAxis, name: '频次', nameTextStyle: { color: TEXT_COLOR } },
+    { ...opt.yAxis, name: '累计盈亏', nameTextStyle: { color: TEXT_COLOR }, splitLine: { show: false } },
+  ];
+  opt.legend = { ...opt.legend, data: ['盈亏分布', '累计盈亏'] };
+  opt.grid = { ...opt.grid, right: 70 };
+  opt.series = [
+    { name: '盈亏分布', type: 'bar', yAxisIndex: 0, data: (barS ? barS.data || [] : []).map(function(v) { return { value: v, itemStyle: { color: 'rgba(74,144,217,0.7)', borderColor: '#6ab0ff', borderWidth: 1 } }; }) },
+    { name: '累计盈亏', type: 'line', yAxisIndex: 1, data: lineS ? lineS.data || [] : [], showSymbol: false, symbol: 'none', lineStyle: { color: '#ffa502', width: 2 } },
+  ];
+  return opt;
+}
+
+function transformKline(json) {
+  const d = json.data;
+  return {
+    backgroundColor: 'transparent',
+    title: { text: d.title, subtext: d.subtitle || '', left: 'center', textStyle: { color: '#e0e0f0', fontSize: 14 }, subtextStyle: { color: '#8888aa', fontSize: 10 } },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, backgroundColor: 'rgba(23,23,42,0.95)', borderColor: '#3d3d5c', textStyle: { color: '#e0e0f0' } },
+    legend: { data: ['K线', '成交量'], bottom: 0, textStyle: { color: TEXT_COLOR, fontSize: 10 } },
+    grid: [{ left: 65, right: 25, top: 55, height: '55%' }, { left: 65, right: 25, top: '74%', height: '14%' }],
+    xAxis: [
+      { type: 'category', data: d.x_axis.data, axisLabel: { color: LABEL_COLOR, fontSize: 9 }, gridIndex: 0 },
+      { type: 'category', data: d.x_axis.data, axisLabel: { show: false }, gridIndex: 1 },
+    ],
+    yAxis: [
+      { type: 'value', scale: true, splitLine: { lineStyle: { color: GRID_COLOR, type: 'dashed' } }, axisLabel: { color: LABEL_COLOR, fontSize: 10 }, gridIndex: 0 },
+      { type: 'value', splitLine: { show: false }, axisLabel: { color: LABEL_COLOR, fontSize: 9 }, gridIndex: 1 },
+    ],
+    dataZoom: [{ type: 'inside', xAxisIndex: [0, 1] }, { type: 'slider', xAxisIndex: [0, 1], bottom: 20 }],
+    series: [
+      { name: 'K线', type: 'candlestick', xAxisIndex: 0, yAxisIndex: 0, data: d.series[0] ? d.series[0].data || [] : [], itemStyle: { color: COLOR_POS, color0: COLOR_NEG, borderColor: COLOR_POS, borderColor0: COLOR_NEG } },
+      { name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: d.series[1] ? d.series[1].data || [] : [], itemStyle: { color: 'rgba(74,74,106,0.6)' } },
+    ],
+  };
+}
+
+function transformCompare(json) {
+  var d = json.data.equity_lines.data;
+  var opt = getBaseOption(d.title || '多策略权益曲线对比', d.subtitle || '');
+  opt.xAxis = { ...opt.xAxis, type: 'time', data: d.x_axis.data };
+  opt.yAxis = { ...opt.yAxis, name: '权益 (USDT)', nameTextStyle: { color: TEXT_COLOR } };
+  var colors = [COLOR_POS, '#4a90d9', '#ffa502', COLOR_NEG, '#a29bfe', '#fd79a8'];
+  opt.series = d.series.map(function(s, i) {
+    return { name: s.name, type: 'line', data: s.data, smooth: true, showSymbol: false, symbol: 'none', lineStyle: { color: colors[i % colors.length], width: 2 } };
+  });
+  opt.legend = { ...opt.legend, data: d.series.map(function(s) { return s.name; }) };
+  return opt;
+}
+
+function getChartDom(id) {
+  var el = document.getElementById(id);
+  if (!charts[id]) {
+    charts[id] = echarts.init(el, undefined, { renderer: 'canvas' });
+  }
+  return charts[id];
+}
+
+function showError(msg) {
+  document.getElementById('errorContainer').innerHTML = '<div class="error-box">' + msg + '</div>';
+  document.getElementById('loadStatus').className = 'status status-error';
+  document.getElementById('loadStatus').textContent = '加载失败';
+}
+
+function clearError() {
+  document.getElementById('errorContainer').innerHTML = '';
+  document.getElementById('loadStatus').className = 'status status-success';
+  document.getElementById('loadStatus').textContent = '加载完成';
+}
+
+function getParams() {
+  return 'strategy_id=' + document.getElementById('strategy').value +
+    '&days=' + document.getElementById('days').value +
+    '&capital=' + document.getElementById('capital').value;
+}
+
+function fetchChart(endpoint) {
+  return fetch(API_BASE + '/' + endpoint + '?' + getParams())
+    .then(function(r) { return r.json(); });
+}
+
+async function loadAll() {
+  var btn = document.querySelector('.btn-primary');
+  btn.disabled = true;
+  btn.textContent = '加载中...';
+  document.getElementById('loadStatus').textContent = '';
+  clearError();
+
+  try {
+    var params = getParams();
+    var urls = [
+      API_BASE + '/equity_curve?' + params,
+      API_BASE + '/drawdown?' + params,
+      API_BASE + '/monthly_heatmap?' + params,
+      API_BASE + '/pnl_distribution?' + params,
+      API_BASE + '/kline?' + params,
+      API_BASE + '/compare?' + params,
+    ];
+
+    var responses = await Promise.all(urls.map(function(u) { return fetch(u).then(function(r) { return r.json(); }); }));
+
+    var eqJson = responses[0], ddJson = responses[1], hmJson = responses[2],
+        pnlJson = responses[3], klJson = responses[4], cmpJson = responses[5];
+
+    if (eqJson.code !== 0) { showError('权益曲线: ' + (eqJson.message || '加载失败')); return; }
+
+    getChartDom('chart-equity').setOption(transformEquity(eqJson), true);
+    getChartDom('chart-drawdown').setOption(transformDrawdown(ddJson), true);
+    getChartDom('chart-heatmap').setOption(transformHeatmap(hmJson), true);
+    getChartDom('chart-pnl').setOption(transformPnl(pnlJson), true);
+    getChartDom('chart-kline').setOption(transformKline(klJson), true);
+    getChartDom('chart-compare').setOption(transformCompare(cmpJson), true);
+
+    clearError();
+    document.getElementById('loadStatus').textContent = '全部图表加载完成 (' + new Date().toLocaleTimeString() + ')';
+  } catch(e) {
+    showError('请求失败: ' + e.message);
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '加载全部图表';
+  }
+}
+
+window.addEventListener('resize', function() {
+  Object.keys(charts).forEach(function(id) { charts[id].resize(); });
+});
+
+loadAll();
+</script>
+</body>
+</html>

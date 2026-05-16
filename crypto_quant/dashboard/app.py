@@ -4,6 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import json
+import logging
 import numpy as np
 import pandas as pd
 import plotly
@@ -11,6 +12,8 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 from flask import Flask, render_template_string, jsonify, request
+
+logger = logging.getLogger(__name__)
 
 from strategy.ma_cross import MACrossStrategy
 from strategy.rsi import RSIStrategy
@@ -23,16 +26,15 @@ from exchange.config_manager import (
     get_supported_exchanges,
 )
 
+from dashboard.common import run_backtest, fetch_real_market_data, generate_sample_data, STRATEGY_MAP
+
 app = Flask(__name__)
 
-STRATEGY_MAP = {
-    "ma_cross": {"name": "MA均线交叉", "cls": MACrossStrategy},
-    "rsi": {"name": "RSI超买超卖", "cls": RSIStrategy},
-    "grid": {"name": "网格交易", "cls": GridStrategy},
-}
+from dashboard.chart_api import chart_bp
+app.register_blueprint(chart_bp)
 
 PLOTLY_CONFIG = {"displayModeBar": True, "displaylogo": False, "responsive": True}
-DARK_LAYOUT = dict(template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#c0c0d0"))
+DARK_LAYOUT = dict(template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#e2e8f0", family="Inter, sans-serif"))
 DARK_MARGIN = dict(l=60, r=20, t=40, b=40)
 
 _CACHE = {}
@@ -47,33 +49,6 @@ def get_cached(key, builder, *args, **kwargs):
     data = builder(*args, **kwargs)
     _CACHE[key] = {"data": data, "ts": now}
     return data
-
-
-def generate_sample_data(days=60):
-    np.random.seed(42)
-    periods = days * 24
-    dates = pd.date_range(end=pd.Timestamp.now(), periods=periods, freq="1h")
-    price = 40000
-    prices = []
-    for _ in range(periods):
-        price *= (1 + np.random.normal(0.0001, 0.008))
-        prices.append(price)
-    return pd.DataFrame({
-        "open": [p * (1 + np.random.uniform(-0.002, 0.002)) for p in prices],
-        "high": [p * (1 + abs(np.random.normal(0, 0.005))) for p in prices],
-        "low": [p * (1 - abs(np.random.normal(0, 0.005))) for p in prices],
-        "close": prices,
-        "volume": [np.random.uniform(100, 2000) for _ in range(periods)],
-    }, index=dates)
-
-
-def run_backtest(strategy_id, days=180, capital=10000, **kwargs):
-    df = generate_sample_data(days)
-    info = STRATEGY_MAP[strategy_id]
-    strat = info["cls"](**kwargs)
-    strat.set_param("symbol", "BTC/USDT")
-    engine = BacktestEngine(strat, df, initial_capital=capital)
-    return engine.run(), df
 
 
 def fig_to_json(fig):

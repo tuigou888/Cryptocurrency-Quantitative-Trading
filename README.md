@@ -1,16 +1,39 @@
 # Cryptocurrency-Quantitative-Trading
 
-虚拟货币量化交易系统，支持多交易所、多策略、回测与实盘交易。
+专业虚拟货币量化交易系统，支持多交易所、多策略、回测与实盘交易。
 
 ## 功能特性
 
 - **多交易所支持**: Binance、OKX、Bybit
-- **多种策略**: 均线交叉(MACD)、RSI、网格交易
+- **多种策略**: MA均线交叉、RSI、MACD、网格交易
 - **回测系统**: 基于历史数据的策略回测
 - **实盘交易**: 支持模拟盘和实盘交易
 - **风险管理**: 仓位管理、止损止盈、最大回撤控制
-- **数据管理**: K线数据获取、存储与管理
-- **实时通知**: Telegram 消息推送
+- **专业前端**: Vue + React 双框架，现代化UI设计
+
+## 技术栈
+
+### 后端
+
+| 技术 | 用途 |
+|------|------|
+| Python 3.10+ | 核心语言 |
+| Flask | Web框架 |
+| Pandas/NumPy | 数据分析 |
+| CCXT | 交易所接口 |
+| SQLAlchemy | 数据库ORM |
+| pytest | 测试框架 |
+
+### 前端
+
+| 技术 | 用途 |
+|------|------|
+| Vue 3 | 展示分析模块 |
+| React 18 | 核心交易模块 |
+| Vite 5 | 构建工具 |
+| TypeScript | 类型安全 |
+| Plotly.js | 图表库 |
+| Inter + JetBrains Mono | 专业字体 |
 
 ## 项目结构
 
@@ -18,146 +41,89 @@
 crypto_quant/
 ├── backtest/          # 回测引擎
 ├── config/            # 配置文件
-│   ├── settings.py    # 配置加载器
-│   └── exchanges.yaml # 交易所配置
 ├── core/              # 核心引擎
-│   ├── engine.py      # 交易引擎
-│   └── event_bus.py   # 事件总线
 ├── data/              # 数据管理
-│   ├── manager.py     # 数据管理器
-│   └── storage.py     # 数据存储
 ├── exchange/          # 交易所接口
-│   ├── base.py        # 基础接口定义
-│   └── ccxt_connector.py # CCXT连接器
 ├── execution/         # 订单执行
-│   └── order_manager.py
-├── notification/       # 通知服务
-│   └── notifier.py
+├── notification/      # 通知服务
 ├── portfolio/         # 资产管理
-│   └── tracker.py
 ├── risk/              # 风险管理
-│   └── manager.py
 ├── strategy/          # 交易策略
-│   ├── base.py        # 策略基类
-│   ├── ma_cross.py    # 均线交叉策略
-│   ├── rsi.py         # RSI策略
-│   └── grid.py        # 网格策略
 ├── utils/             # 工具函数
-│   └── logger.py      # 日志工具
 ├── main.py            # CLI入口
 └── .env               # 环境变量(需创建)
 ```
 
-## 安装
+## 快速开始
 
-### 环境要求
-
-- Python 3.10+
-- Windows/Linux/macOS
-
-### 安装依赖
+### 1. 后端安装
 
 ```bash
+# 克隆项目
+git clone <repository-url>
+cd Cryptocurrency-Quantitative-Trading
+
+# 安装Python依赖
 pip install -r crypto_quant/requirements.txt
+
+# 配置环境变量
+cp crypto_quant/.env.example crypto_quant/.env
+# 编辑 .env 填入你的API密钥
 ```
 
-### 配置环境变量
-
-复制 `.env.example` 为 `.env`，并填入你的API密钥：
-
-```env
-# Binance
-BINANCE_API_KEY=your_binance_api_key
-BINANCE_SECRET=your_binance_secret
-
-# OKX
-OKX_API_KEY=your_okx_api_key
-OKX_SECRET=your_okx_secret
-OKX_PASSPHRASE=your_okx_passphrase
-
-# Bybit
-BYBIT_API_KEY=your_bybit_api_key
-BYBIT_SECRET=your_bybit_secret
-
-# Telegram通知(可选)
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-TELEGRAM_CHAT_ID=your_telegram_chat_id
-```
-
-## 使用方法
-
-### 查看系统状态
+### 2. 前端安装
 
 ```bash
-python crypto_quant/main.py status
+cd frontend
+
+# 安装依赖
+npm install
+
+# 开发模式
+npm run dev
+
+# 构建生产版本
+npm run build
 ```
 
-### 获取市场行情
+### 3. 启动服务
 
 ```bash
-# 查看交易对列表
-python crypto_quant/main.py markets -e binance -m spot
+# 启动后端 (8501端口)
+cd crypto_quant
+python main.py api
 
-# 获取实时行情
-python crypto_quant/main.py ticker -e binance -s BTC/USDT
+# 前端开发服务器 (3000端口)
+cd frontend
+npm run dev
 ```
 
-### 获取历史数据
+## 前端页面
 
-```bash
-python crypto_quant/main.py fetch -e binance -s BTC/USDT -t 1h -n 500
-```
-
-### 策略回测
-
-```bash
-# 均线交叉策略(默认)
-python crypto_quant/main.py backtest -st ma_cross -s BTC/USDT -t 1h -c 10000
-
-# RSI策略
-python crypto_quant/main.py backtest -st rsi -s BTC/USDT -t 1h -c 10000
-
-# 网格策略
-python crypto_quant/main.py backtest -st grid -s BTC/USDT -t 1h -c 10000
-
-# 自定义策略参数
-python crypto_quant/main.py backtest -st ma_cross -s ETH/USDT -p fast_period=20 -p slow_period=50
-```
-
-### 获取策略信号
-
-```bash
-python crypto_quant/main.py signal -st ma_cross -s BTC/USDT
-```
-
-### 启动交易
-
-```bash
-# 模拟盘交易(默认)
-python crypto_quant/main.py trade -st ma_cross -s BTC/USDT --dry-run
-
-# 实盘交易
-python crypto_quant/main.py trade -st ma_cross -s BTC/USDT --live
-```
+| 页面 | 路由 | 说明 |
+|------|------|------|
+| 概览 | `/` | 策略运行概览、权益曲线、交易统计 |
+| 回测分析 | `/backtest` | 策略参数配置、历史回测 |
+| 交易分析 | `/compare` | 多策略对比分析 |
+| 风险分析 | `/risk` | 风险指标、回撤分析 |
+| 实时交易 | `/live` | 实时交易监控 |
+| 交易所配置 | `/exchanges` | 交易所API配置管理 |
+| 虚拟盘交易 | `/sandbox` | 模拟交易界面 |
 
 ## 交易策略
 
-### 均线交叉策略 (MA_Cross)
-
-通过快速均线与慢速均线的交叉来判断买卖信号。
+### MA均线交叉策略
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
 | fast_period | 10 | 快速均线周期 |
 | slow_period | 30 | 慢速均线周期 |
 
-**原理**:
-- 金叉(快速均线上穿慢速均线) → 买入信号
-- 死叉(快速均线下穿慢速均线) → 卖出信号
+**信号**:
+- 金叉(快速均线上穿慢速均线) → 买入
+- 死叉(快速均线下穿慢速均线) → 卖出
 
 ### RSI策略
-
-基于相对强弱指数(RSI)的超买超卖策略。
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
@@ -165,29 +131,55 @@ python crypto_quant/main.py trade -st ma_cross -s BTC/USDT --live
 | oversold | 30 | 超卖阈值 |
 | overbought | 70 | 超买阈值 |
 
-**原理**:
-- RSI < 30 → 超卖 → 买入信号
-- RSI > 70 → 超买 → 卖出信号
-
-### 网格策略 (Grid)
-
-在指定价格范围内设置网格，低买高卖。
+### 网格策略
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
 | grid_num | 10 | 网格数量 |
 | grid_range_pct | 0.05 | 价格范围百分比 |
-| amount_per_grid | 0.001 | 每格交易数量 |
 
-**原理**:
-- 价格低于中心价 → 买入
-- 价格高于中心价 → 卖出
+## CLI命令
+
+```bash
+# 查看状态
+python crypto_quant/main.py status
+
+# 获取K线数据
+python crypto_quant/main.py fetch -e binance -s BTC/USDT -t 1h -n 500
+
+# 运行回测
+python crypto_quant/main.py backtest -st ma_cross -s BTC/USDT -c 10000
+
+# 启动交易
+python crypto_quant/main.py trade -st ma_cross -s BTC/USDT --dry-run
+```
+
+## 设计系统
+
+前端采用专业金融UI设计系统：
+
+### 色彩系统
+
+```css
+--bg-primary: #020617;     /* 深色背景 */
+--color-success: #22c55e;  /* 成功/做多 */
+--color-danger: #ef4444;   /* 危险/做空 */
+--color-warning: #f59e0b;  /* 警告/中性 */
+```
+
+### 响应式断点
+
+| 设备 | 断点 |
+|------|------|
+| 桌面 | >1024px |
+| 平板 | 768-1024px |
+| 手机 | <768px |
 
 ## 配置说明
 
-### exchanges.yaml
+### 交易所配置
 
-交易所API配置，支持 Binance、OKX、Bybit。
+编辑 `crypto_quant/config/exchanges.yaml` 或使用前端界面配置。
 
 ### 风险管理
 
@@ -205,11 +197,15 @@ python crypto_quant/main.py trade -st ma_cross -s BTC/USDT --live
 3. **参数优化**: 不同交易对可能需要不同的策略参数
 4. **网络稳定**: 实盘交易需要稳定的网络连接
 
-## 技术栈
+## 文档
 
-- **交易所接口**: CCXT
-- **数据分析**: Pandas, NumPy
-- **技术指标**: TA-Lib
-- **数据库**: SQLite (通过 SQLAlchemy)
-- **任务调度**: APScheduler
-- **CLI界面**: Click, Rich
+| 文档 | 说明 |
+|------|------|
+| [README](README.md) | 项目主文档 |
+| [EVALUATION](EVALUATION.md) | 项目评估报告 |
+| [IMPROVEMENT](IMPROVEMENT_REPORT.md) | 改进报告 |
+| [前端架构](frontend/ARCHITECTURE.md) | 前端技术架构 |
+
+## 许可证
+
+MIT License

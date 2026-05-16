@@ -1,12 +1,10 @@
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
-import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
 
 export default defineConfig({
     plugins: [
         vue(),
-        react(),
     ],
     resolve: {
         alias: {
@@ -14,13 +12,11 @@ export default defineConfig({
             '@pages': resolve(__dirname, 'src/pages'),
             '@components': resolve(__dirname, 'src/components'),
             '@vue-pages': resolve(__dirname, 'src/vue'),
-            '@react-pages': resolve(__dirname, 'src/react'),
             '@shared': resolve(__dirname, 'src/shared'),
         },
-        dedupe: ['vue', 'vue-demi'],
     },
     optimizeDeps: {
-        include: ['vue', 'vue-router', 'pinia'],
+        include: ['vue', 'vue-router', 'echarts'],
         exclude: ['plotly.js'],
     },
     server: {
@@ -37,8 +33,7 @@ export default defineConfig({
         rollupOptions: {
             output: {
                 manualChunks: {
-                    vue: ['vue', 'vue-router', 'pinia'],
-                    react: ['react', 'react-dom', 'react-router-dom', 'zustand'],
+                    vue: ['vue', 'vue-router'],
                 },
             },
         },
